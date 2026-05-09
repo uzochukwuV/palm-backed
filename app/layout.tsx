@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Playfair_Display, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { SolanaWalletProvider } from '@/components/solana/wallet-provider'
 import './globals.css'
 
 const inter = Inter({ 
