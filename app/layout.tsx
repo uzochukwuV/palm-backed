@@ -70,8 +70,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable} ${geistMono.variable} bg-background`}>
       <body className="font-sans antialiased">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        <SolanaWalletProvider>
+          {children}
+          {process.env.NODE_ENV === 'production' && <Analytics />}
+        </SolanaWalletProvider>
       </body>
     </html>
   )

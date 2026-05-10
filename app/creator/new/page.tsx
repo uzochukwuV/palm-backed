@@ -11,7 +11,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Wallet } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
+import { useSolanaProgram } from '@/hooks/use-solana-program'
+import { uuidToProjectId } from '@/lib/solana/program'
 
 const categories = [
   'Software',
@@ -31,6 +35,9 @@ export default function NewProjectPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { publicKey, connected } = useWallet()
+  const { setVisible } = useWalletModal()
+  const { initProject, isLoading: isChainLoading, error: chainError, clearError } = useSolanaProgram()
   
   const [formData, setFormData] = useState({
     title: '',
@@ -38,12 +45,40 @@ export default function NewProjectPage() {
     description: '',
     category: '',
     funding_goal: '',
+    deadline: '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    clearError()
+
+    if (!connected || !publicKey) {
+      setError('Connect a Solana wallet before creating an on-chain project')
+      setVisible(true)
+      setIsLoading(false)
+      return
+    }
+
+    if (!formData.funding_goal || parseFloat(formData.funding_goal) <= 0) {
+      setError('Funding goal must be greater than 0 SOL')
+      setIsLoading(false)
+      return
+    }
+
+    if (!formData.deadline) {
+      setError('Choose a funding deadline')
+      setIsLoading(false)
+      return
+    }
+
+    const deadlineUnixTs = Math.floor(new Date(formData.deadline).getTime() / 1000)
+    if (deadlineUnixTs <= Math.floor(Date.now() / 1000)) {
+      setError('Funding deadline must be in the future')
+      setIsLoading(false)
+      return
+    }
 
     const supabase = createClient()
     
@@ -65,7 +100,7 @@ export default function NewProjectPage() {
         tagline: formData.tagline || null,
         description: formData.description || null,
         category: formData.category,
-        funding_goal: formData.funding_goal ? parseFloat(formData.funding_goal) : null,
+        funding_goal: parseFloat(formData.funding_goal),
         status: 'active',
       })
       .select()
@@ -73,6 +108,37 @@ export default function NewProjectPage() {
 
     if (createError) {
       setError(createError.message)
+      setIsLoading(false)
+      return
+    }
+
+    const onChainProjectId = uuidToProjectId(data.id)
+    const signature = await initProject(
+      onChainProjectId,
+      parseFloat(formData.funding_goal),
+      deadlineUnixTs
+    )
+
+    if (!signature) {
+      setError('Project was saved, but on-chain initialization failed. Open the project settings to retry.')
+      setIsLoading(false)
+      router.push(`/creator/project/${data.id}`)
+      return
+    }
+
+    const { error: chainUpdateError } = await supabase
+      .from('projects')
+      .update({
+        creator_wallet: publicKey.toBase58(),
+        on_chain_project_id: onChainProjectId.toString(),
+        on_chain_deadline_unix_ts: deadlineUnixTs,
+        on_chain_tx_signature: signature,
+        on_chain_total_funded: 0,
+      })
+      .eq('id', data.id)
+
+    if (chainUpdateError) {
+      setError(`Project initialized on-chain, but metadata could not be saved: ${chainUpdateError.message}`)
       setIsLoading(false)
       return
     }
@@ -154,22 +220,37 @@ export default function NewProjectPage() {
 
                 {/* Funding Goal */}
                 <div className="space-y-2">
-                  <Label htmlFor="funding_goal">Funding Goal (USD)</Label>
+                  <Label htmlFor="funding_goal">Funding Goal (SOL)</Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">◎</span>
                     <Input
                       id="funding_goal"
                       type="number"
                       min="0"
-                      step="100"
-                      placeholder="10000"
+                      step="0.1"
+                      placeholder="10"
                       className="pl-8"
                       value={formData.funding_goal}
                       onChange={(e) => setFormData({ ...formData, funding_goal: e.target.value })}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Leave empty if you don&apos;t have a specific funding goal
+                    This SOL amount is enforced by the deployed Solana program.
+                  </p>
+                </div>
+
+                {/* Funding Deadline */}
+                <div className="space-y-2">
+                  <Label htmlFor="deadline">Funding Deadline *</Label>
+                  <Input
+                    id="deadline"
+                    type="datetime-local"
+                    value={formData.deadline}
+                    onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Creators can withdraw after this deadline according to the smart contract.
                   </p>
                 </div>
 
@@ -186,9 +267,22 @@ export default function NewProjectPage() {
                 </div>
 
                 {/* Error Message */}
-                {error && (
+                {(error || chainError) && (
                   <div className="p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
-                    {error}
+                    {error || chainError}
+                  </div>
+                )}
+
+                {!connected && (
+                  <div className="p-4 rounded-lg border border-border bg-muted/40 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-sm">Wallet required</p>
+                      <p className="text-xs text-muted-foreground">Connect Phantom or Solflare to initialize your project vault.</p>
+                    </div>
+                    <Button type="button" variant="outline" onClick={() => setVisible(true)}>
+                      <Wallet className="h-4 w-4 mr-2" />
+                      Connect
+                    </Button>
                   </div>
                 )}
 
@@ -205,9 +299,9 @@ export default function NewProjectPage() {
                   <Button
                     type="submit"
                     className="flex-1"
-                    disabled={isLoading || !formData.title || !formData.category}
+                    disabled={isLoading || isChainLoading || !formData.title || !formData.category || !formData.funding_goal || !formData.deadline || !connected}
                   >
-                    {isLoading ? (
+                    {isLoading || isChainLoading ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Creating...
