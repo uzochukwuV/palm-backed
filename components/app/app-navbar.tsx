@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Compass, Play, User, LogOut, Settings, PlusCircle, LayoutDashboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { WalletButton } from '@/components/solana/wallet-button'
 
 interface AppNavbarProps {
   user?: {
@@ -62,6 +63,7 @@ export function AppNavbar({ user }: AppNavbarProps) {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            <WalletButton />
             {user ? (
               <>
                 <Button asChild variant="outline" size="sm" className="rounded-full hidden sm:flex">

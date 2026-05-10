@@ -2,8 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useSolanaProgram } from '@/hooks/use-solana-program'
+import { SOLANA_EXPLORER_CLUSTER, uuidToProjectId } from '@/lib/solana/program'
 import { AppNavbar } from '@/components/app/app-navbar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,7 +30,9 @@ import {
   Eye,
   Play,
   Settings,
-  Upload
+  Upload,
+  Wallet,
+  CircleDollarSign
 } from 'lucide-react'
 
 const categories = [
@@ -55,6 +61,12 @@ interface Project {
   backer_count: number
   status: string
   created_at: string
+  creator_wallet: string | null
+  on_chain_project_id: string | null
+  on_chain_deadline_unix_ts: number | null
+  on_chain_tx_signature: string | null
+  on_chain_withdraw_tx_signature: string | null
+  on_chain_total_funded: number | null
 }
 
 interface ProjectUpdate {
@@ -88,6 +100,10 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [chainTxSignature, setChainTxSignature] = useState<string | null>(null)
+  const { publicKey, connected } = useWallet()
+  const { setVisible } = useWalletModal()
+  const { initProject, withdrawFundsAction, isLoading: isChainLoading, error: chainError, clearError } = useSolanaProgram()
   const [user, setUser] = useState<{ id: string; email?: string; username?: string } | null>(null)
   
   // Form states
@@ -97,6 +113,7 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
     description: '',
     category: '',
     funding_goal: '',
+    deadline: '',
     cover_image_url: '',
     status: 'active',
   })
@@ -169,6 +186,9 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
       description: projectData.description || '',
       category: projectData.category,
       funding_goal: projectData.funding_goal?.toString() || '',
+      deadline: projectData.on_chain_deadline_unix_ts
+        ? new Date(projectData.on_chain_deadline_unix_ts * 1000).toISOString().slice(0, 16)
+        : '',
       cover_image_url: projectData.cover_image_url || '',
       status: projectData.status,
     })
@@ -231,6 +251,105 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
     }
 
     setIsSaving(false)
+  }
+
+  const handleInitializeOnChain = async () => {
+    if (!project || !projectId) return
+
+    clearError()
+    setError(null)
+    setSuccessMessage(null)
+
+    if (!connected || !publicKey) {
+      setError('Connect the creator wallet before initializing on-chain funding')
+      setVisible(true)
+      return
+    }
+
+    if (!formData.funding_goal || parseFloat(formData.funding_goal) <= 0) {
+      setError('Funding goal must be greater than 0 SOL')
+      return
+    }
+
+    if (!formData.deadline) {
+      setError('Choose a funding deadline')
+      return
+    }
+
+    const deadlineUnixTs = Math.floor(new Date(formData.deadline).getTime() / 1000)
+    if (deadlineUnixTs <= Math.floor(Date.now() / 1000)) {
+      setError('Funding deadline must be in the future')
+      return
+    }
+
+    const onChainProjectId = project.on_chain_project_id
+      ? BigInt(project.on_chain_project_id)
+      : uuidToProjectId(projectId)
+
+    const signature = await initProject(
+      onChainProjectId,
+      parseFloat(formData.funding_goal),
+      deadlineUnixTs
+    )
+
+    if (!signature) return
+
+    const supabase = createClient()
+    const { error: updateError } = await supabase
+      .from('projects')
+      .update({
+        creator_wallet: publicKey.toBase58(),
+        on_chain_project_id: onChainProjectId.toString(),
+        on_chain_deadline_unix_ts: deadlineUnixTs,
+        on_chain_tx_signature: signature,
+        on_chain_total_funded: 0,
+      })
+      .eq('id', projectId)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setProject({
+      ...project,
+      creator_wallet: publicKey.toBase58(),
+      on_chain_project_id: onChainProjectId.toString(),
+      on_chain_deadline_unix_ts: deadlineUnixTs,
+      on_chain_tx_signature: signature,
+      on_chain_total_funded: 0,
+    })
+    setChainTxSignature(signature)
+    setSuccessMessage('On-chain project vault initialized successfully!')
+  }
+
+  const handleWithdrawOnChain = async () => {
+    if (!project?.on_chain_project_id || !projectId) return
+
+    clearError()
+    setError(null)
+    setSuccessMessage(null)
+
+    const signature = await withdrawFundsAction(BigInt(project.on_chain_project_id))
+    if (!signature) return
+
+    const supabase = createClient()
+    const { error: updateError } = await supabase
+      .from('projects')
+      .update({
+        on_chain_withdraw_tx_signature: signature,
+        status: 'completed',
+      })
+      .eq('id', projectId)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setProject({ ...project, on_chain_withdraw_tx_signature: signature, status: 'completed' })
+    setChainTxSignature(signature)
+    setSuccessMessage('Funds withdrawn successfully!')
   }
 
   const handleAddUpdate = async () => {
@@ -406,9 +525,9 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
               {successMessage}
             </div>
           )}
-          {error && (
+          {(error || chainError) && (
             <div className="mb-6 p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
-              {error}
+              {error || chainError}
             </div>
           )}
 
@@ -524,18 +643,110 @@ export default function ProjectManagePage({ params }: { params: Promise<{ id: st
 
                   {/* Funding Goal */}
                   <div className="space-y-2">
-                    <Label htmlFor="funding_goal">Funding Goal (USD)</Label>
+                    <Label htmlFor="funding_goal">Funding Goal (SOL)</Label>
                     <div className="relative max-w-xs">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">◎</span>
                       <Input
                         id="funding_goal"
                         type="number"
                         min="0"
-                        step="100"
+                        step="0.1"
                         className="pl-8"
                         value={formData.funding_goal}
                         onChange={(e) => setFormData({ ...formData, funding_goal: e.target.value })}
                       />
+                    </div>
+                  </div>
+
+                  {/* Funding Deadline */}
+                  <div className="space-y-2">
+                    <Label htmlFor="deadline">Funding Deadline</Label>
+                    <Input
+                      id="deadline"
+                      type="datetime-local"
+                      value={formData.deadline}
+                      onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+                    />
+                  </div>
+
+                  {/* On-chain Funding */}
+                  <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="font-semibold text-foreground flex items-center gap-2">
+                          <CircleDollarSign className="h-4 w-4 text-primary" />
+                          Solana Funding Vault
+                        </h3>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Initialize, track, and withdraw funds from the deployed devnet program.
+                        </p>
+                      </div>
+                      {project?.on_chain_tx_signature && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a
+                            href={`https://explorer.solana.com/tx/${project.on_chain_tx_signature}${SOLANA_EXPLORER_CLUSTER}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Init Tx
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                      <div className="rounded-lg bg-background p-3">
+                        <p className="text-muted-foreground">Creator wallet</p>
+                        <p className="font-mono truncate">{project?.creator_wallet || publicKey?.toBase58() || 'Not connected'}</p>
+                      </div>
+                      <div className="rounded-lg bg-background p-3">
+                        <p className="text-muted-foreground">On-chain id</p>
+                        <p className="font-mono truncate">{project?.on_chain_project_id || (projectId ? uuidToProjectId(projectId).toString() : '—')}</p>
+                      </div>
+                      <div className="rounded-lg bg-background p-3">
+                        <p className="text-muted-foreground">Funded</p>
+                        <p className="font-semibold">{project?.on_chain_total_funded ?? project?.current_funding ?? 0} SOL</p>
+                      </div>
+                    </div>
+
+                    {chainTxSignature && (
+                      <div className="rounded-lg bg-green-500/10 p-3 text-sm">
+                        <p className="text-green-600 font-medium">Transaction confirmed</p>
+                        <a
+                          className="font-mono text-xs underline break-all"
+                          href={`https://explorer.solana.com/tx/${chainTxSignature}${SOLANA_EXPLORER_CLUSTER}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {chainTxSignature}
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {!connected && (
+                        <Button type="button" variant="outline" onClick={() => setVisible(true)}>
+                          <Wallet className="h-4 w-4 mr-2" />
+                          Connect Wallet
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        onClick={handleInitializeOnChain}
+                        disabled={isChainLoading || !!project?.on_chain_tx_signature}
+                      >
+                        {isChainLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        {project?.on_chain_tx_signature ? 'Vault Initialized' : 'Initialize Vault'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleWithdrawOnChain}
+                        disabled={isChainLoading || !project?.on_chain_project_id || !!project?.on_chain_withdraw_tx_signature}
+                      >
+                        {project?.on_chain_withdraw_tx_signature ? 'Withdrawn' : 'Withdraw Funds'}
+                      </Button>
                     </div>
                   </div>
 

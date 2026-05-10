@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useSolanaProgram } from "@/hooks/use-solana-program";
+import { createClient } from "@/lib/supabase/client";
+import { SOLANA_EXPLORER_CLUSTER } from "@/lib/solana/program";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +24,7 @@ interface FundProjectDialogProps {
   projectId: string;
   projectTitle: string;
   creatorWallet: string;
-  onChainProjectId: bigint;
+  onChainProjectId: string;
   currentFunding: number;
   fundingGoal: number;
   trigger?: React.ReactNode;
@@ -55,11 +57,29 @@ export function FundProjectDialog({
     
     const signature = await fundProjectAction(
       creatorWallet,
-      onChainProjectId,
+      BigInt(onChainProjectId),
       amountNum
     );
 
     if (signature) {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      await supabase.from("contributions").insert({
+        project_id: projectId,
+        backer_id: user?.id || null,
+        amount: amountNum,
+        transaction_signature: signature,
+      });
+
+      await supabase
+        .from("projects")
+        .update({
+          current_funding: currentFunding + amountNum,
+          on_chain_total_funded: currentFunding + amountNum,
+        })
+        .eq("id", projectId);
+
       setTxSignature(signature);
       setAmount("");
     }
@@ -111,7 +131,7 @@ export function FundProjectDialog({
                 asChild
               >
                 <a
-                  href={`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`}
+                  href={`https://explorer.solana.com/tx/${txSignature}${SOLANA_EXPLORER_CLUSTER}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

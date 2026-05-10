@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { FundProjectDialog } from '@/components/solana/fund-project-dialog'
 import { 
   Users, 
   Play, 
@@ -122,8 +123,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     notFound()
   }
 
+  const onChainProjectId = project.on_chain_project_id || null
+  const currentFundingSol = typeof project.on_chain_total_funded === 'number'
+    ? project.on_chain_total_funded
+    : project.current_funding || 0
   const progress = project.funding_goal 
-    ? (project.current_funding / project.funding_goal) * 100 
+    ? (currentFundingSol / project.funding_goal) * 100 
     : 0
 
   return (
@@ -375,10 +380,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                     <div>
                       <div className="flex items-baseline justify-between mb-2">
                         <span className="text-2xl font-bold text-foreground">
-                          ${project.current_funding.toLocaleString()}
+                          {currentFundingSol.toLocaleString()} SOL
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          of ${project.funding_goal.toLocaleString()}
+                          of {project.funding_goal.toLocaleString()} SOL
                         </span>
                       </div>
                       <Progress value={Math.min(progress, 100)} className="h-3" />
@@ -401,9 +406,25 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                   </div>
 
                   {/* Back Button */}
-                  <Button className="w-full rounded-full" size="lg">
-                    Back this project
-                  </Button>
+                  {project.creator_wallet && onChainProjectId ? (
+                    <FundProjectDialog
+                      projectId={project.id}
+                      projectTitle={project.title}
+                      creatorWallet={project.creator_wallet}
+                      onChainProjectId={onChainProjectId}
+                      currentFunding={currentFundingSol}
+                      fundingGoal={project.funding_goal || 0}
+                      trigger={
+                        <Button className="w-full rounded-full" size="lg">
+                          Back this project
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <Button className="w-full rounded-full" size="lg" disabled>
+                      On-chain funding not initialized
+                    </Button>
+                  )}
 
                   {/* Creator Links */}
                   {(project.creator.website_url || project.creator.twitter_url || project.creator.github_url) && (

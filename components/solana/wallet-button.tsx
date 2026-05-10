@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Wallet, ChevronDown, Copy, LogOut, ExternalLink } from "lucide-react";
 import { useState } from "react";
+import { SOLANA_EXPLORER_CLUSTER } from "@/lib/solana/program";
 
 export function WalletButton() {
   const { publicKey, disconnect, connected, connecting } = useWallet();
@@ -75,7 +76,7 @@ export function WalletButton() {
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
-            href={`https://explorer.solana.com/address/${publicKey?.toBase58()}?cluster=devnet`}
+            href={`https://explorer.solana.com/address/${publicKey?.toBase58()}${SOLANA_EXPLORER_CLUSTER}`}
             target="_blank"
             rel="noopener noreferrer"
           >
