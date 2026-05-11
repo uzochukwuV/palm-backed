@@ -17,6 +17,8 @@ pub enum EscrowError {
     AccountNotWritable = 13,
     RefundNotAllowed = 14,
     NoReceiptFound = 15,
+    /// Signer is not the beneficiary and is not the stored relay for this receipt.
+    UnauthorizedRefund = 16,
 }
 
 impl From<EscrowError> for ProgramError {

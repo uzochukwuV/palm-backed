@@ -15,10 +15,10 @@ export function CTA() {
 
           <div className="relative px-8 py-16 sm:px-16 sm:py-24 text-center">
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-background max-w-3xl mx-auto text-balance">
-              Ready to share your journey with the world?
+              Ready to pursue your dream?
             </h2>
             <p className="mt-6 text-lg text-background/70 max-w-xl mx-auto">
-              Join thousands of creators building in public. Start posting updates and let supporters fuel your vision.
+              Join thousands of dreamers, makers, and builders on Solana. Fund your vision with USDC, PUSD, or USDT and build with people who believe in you.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" className="rounded-full px-8 bg-primary text-primary-foreground hover:bg-primary/90">

@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Wallet, Sparkles, ExternalLink } from "lucide-react";
+import { PaymentMethodSelector, type PaymentMethod } from "./payment-method-selector";
 
 interface FundProjectDialogProps {
   projectId: string;
@@ -40,6 +41,8 @@ export function FundProjectDialog({
   trigger,
 }: FundProjectDialogProps) {
   const [open, setOpen] = useState(false);
+  const [showPaymentMethod, setShowPaymentMethod] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('solana');
   const [amount, setAmount] = useState("");
   const [txSignature, setTxSignature] = useState<string | null>(null);
   
@@ -89,7 +92,25 @@ export function FundProjectDialog({
     setOpen(false);
     setTxSignature(null);
     setAmount("");
+    setShowPaymentMethod(false);
     clearError();
+  };
+
+  const handleOpenDialog = () => {
+    setOpen(true);
+    setShowPaymentMethod(true);
+  };
+
+  const handlePaymentMethodSelect = (method: PaymentMethod) => {
+    setSelectedPaymentMethod(method);
+    setShowPaymentMethod(false);
+    
+    if (method === 'crosschain') {
+      // TODO: Open Kira Pay payment link in new window when implemented
+      console.log('[v0] Cross-chain payment via Kira Pay selected');
+    } else if (!connected) {
+      setVisible(true);
+    }
   };
 
   const handleConnectWallet = () => {
@@ -99,15 +120,16 @@ export function FundProjectDialog({
   const presetAmounts = [0.1, 0.5, 1, 5];
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full">
-            <Sparkles className="mr-2 h-4 w-4" />
-            Back this Project
-          </Button>
-        )}
-      </DialogTrigger>
+    <>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild onClick={handleOpenDialog}>
+          {trigger || (
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Back this Project
+            </Button>
+          )}
+        </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         {txSignature ? (
           <>
@@ -257,6 +279,14 @@ export function FundProjectDialog({
           </>
         )}
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      <PaymentMethodSelector
+        open={showPaymentMethod}
+        onOpenChange={setShowPaymentMethod}
+        onSelect={handlePaymentMethodSelect}
+        isLoading={isLoading}
+      />
+    </>
   );
 }

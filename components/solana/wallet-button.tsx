@@ -10,13 +10,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Wallet, ChevronDown, Copy, LogOut, ExternalLink } from "lucide-react";
+import { Wallet, ChevronDown, Copy, LogOut, ExternalLink, Globe } from "lucide-react";
 import { useState } from "react";
 import { SOLANA_EXPLORER_CLUSTER } from "@/lib/solana/program";
+import { useSNSDomain } from "@/hooks/use-sns-domain";
 
 export function WalletButton() {
   const { publicKey, disconnect, connected, connecting } = useWallet();
   const { setVisible } = useWalletModal();
+  const { domain } = useSNSDomain(connected ? publicKey : null);
   const [copied, setCopied] = useState(false);
 
   const handleConnect = () => {
@@ -65,6 +67,14 @@ export function WalletButton() {
       <DropdownMenuContent align="end" className="w-56">
         <div className="px-2 py-2">
           <p className="text-xs text-muted-foreground">Connected Wallet</p>
+          {domain && (
+            <>
+              <p className="flex items-center gap-1.5 font-mono text-sm font-semibold text-primary mb-1">
+                <Globe className="h-3.5 w-3.5" />
+                {domain}
+              </p>
+            </>
+          )}
           <p className="font-mono text-sm truncate">
             {publicKey?.toBase58()}
           </p>

@@ -1,35 +1,35 @@
-import { Video, DollarSign, Users, TrendingUp, Smartphone, Heart } from 'lucide-react'
+import { Video, DollarSign, Users, TrendingUp, Smartphone, Heart, Zap } from 'lucide-react'
 
 const features = [
   {
     icon: Video,
-    title: 'Build in Public',
-    description: 'Share your journey through short-form video updates. Let supporters see every milestone.',
+    title: 'Share Your Journey',
+    description: 'Post short-form video updates showing your progress. Whether you&apos;re building a business, learning a skill, or chasing a dream—share it transparently.',
   },
   {
     icon: DollarSign,
-    title: 'Get Funded',
-    description: 'Receive backing from people who believe in your vision. No gatekeepers, just authentic support.',
+    title: 'Multiple Payment Options',
+    description: 'Fund any goal with USDC, PUSD, or USDT. Secure, transparent transactions on Solana.',
   },
   {
     icon: Users,
-    title: 'Build Community',
-    description: 'Connect with supporters who become invested in your success. Turn viewers into advocates.',
+    title: 'Build Your Supporters',
+    description: 'Connect with people who genuinely believe in what you&apos;re doing. Turn viewers into a community that grows with you.',
   },
   {
     icon: TrendingUp,
-    title: 'Track Progress',
-    description: 'Transparent funding goals and progress tracking. Backers see exactly where their support goes.',
+    title: 'Transparent Funding',
+    description: 'Set clear goals and track progress together. Backers see exactly how their support is helping you move forward.',
   },
   {
     icon: Smartphone,
-    title: 'Mobile-First Feed',
-    description: 'Discover projects through a TikTok-style feed. Swipe through updates and find your next favorite creator.',
+    title: 'Discover Everything',
+    description: 'Browse a TikTok-style feed of dreamers pursuing goals—startups, side hustles, creative projects, fitness journeys, and more.',
   },
   {
-    icon: Heart,
-    title: 'Support Creators',
-    description: 'Back projects with any amount. Every contribution helps bring ideas to life.',
+    icon: Zap,
+    title: 'Powered by Solana',
+    description: 'Lightning-fast, low-cost transactions with no gatekeepers. Pure peer-to-peer support on the blockchain.',
   },
 ]
 
@@ -42,7 +42,7 @@ export function Features() {
             How Backed Works
           </h2>
           <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-            A new way to fund ideas. Watch creators build, support their journey, and be part of something from the start.
+            A new way to fund any goal. Watch dreamers, makers, and builders pursue their vision, support what matters to you, and be part of their journey from day one.
           </p>
         </div>
 

@@ -16,19 +16,19 @@ export function Hero() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 mb-8">
             <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-primary">Now in Public Beta</span>
+            <span className="text-sm font-medium text-primary">Built on Solana • Powered by PUSD</span>
           </div>
 
           {/* Main Headline */}
           <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight text-foreground max-w-4xl text-balance">
             Fund the Future,{' '}
-            <span className="text-primary">One Build at a Time</span>
+            <span className="text-primary">One Goal at a Time</span>
           </h1>
 
           {/* Subheadline */}
           <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-2xl text-pretty">
-            Watch creators build in public through short-form video updates. 
-            Back the projects you believe in and be part of their journey from day one.
+            Support dreamers, makers, and builders pursuing their goals through transparent, public updates. 
+            Back what you believe in with USDC, PUSD, or USDT on the Solana blockchain—from startups to side hustles, fashion brands to fitness goals.
           </p>
 
           {/* CTA Buttons */}
@@ -60,7 +60,7 @@ export function Hero() {
               ))}
             </div>
             <p className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">500+</span> creators building in public
+              <span className="font-semibold text-foreground">500+</span> builders pursuing their goals
             </p>
           </div>
         </div>
@@ -82,7 +82,7 @@ export function Hero() {
             <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
               <div className="flex flex-col gap-1">
                 <span className="text-sm font-semibold text-foreground">@sarahbuilds</span>
-                <span className="text-xs text-muted-foreground">Building an AI writing tool</span>
+                <span className="text-xs text-muted-foreground">Launching her sustainable fashion brand</span>
               </div>
               <div className="flex flex-col items-center gap-3">
                 <div className="flex flex-col items-center">

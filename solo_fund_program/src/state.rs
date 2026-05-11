@@ -21,20 +21,32 @@ impl ProjectState {
     pub const LEN: usize = 131;
 }
 
-/// Per-funder receipt PDA: ["receipt", state_pda, funder]
-/// Tracks how much a funder has contributed so they can be fully refunded.
+/// Per-funder receipt PDA: ["receipt", state_pda, beneficiary]
+///
+/// `beneficiary` is the real economic owner of the contribution:
+///   - Direct funder:  beneficiary == signer (tx sender)
+///   - Relay funder:   beneficiary == cross-chain user's Solana key (passed in
+///                     instruction data); relay wallet is stored in `relay`
+///
+/// Refund authorization:
+///   - If relay == default pubkey  → only beneficiary may sign the Refund ix
+///   - If relay != default pubkey  → only relay may sign the Refund ix
+///     (relay is responsible for routing the refund back cross-chain)
 #[derive(BorshSerialize, BorshDeserialize, Clone, Copy, PartialEq, Eq)]
 pub struct ReceiptState {
     /// The state PDA this receipt belongs to.
     pub state_pda: [u8; 32],
-    /// The funder who owns this receipt.
-    pub funder: [u8; 32],
+    /// Real economic owner of the contribution.
+    pub beneficiary: [u8; 32],
+    /// Relay wallet that signed the Fund tx on behalf of beneficiary.
+    /// Set to Pubkey::default() for direct (non-relay) funders.
+    pub relay: [u8; 32],
     /// Cumulative amount funded (lamports for SOL, token units for SPL).
     pub amount: u64,
     pub bump: u8,
 }
 
 impl ReceiptState {
-    // 32 (state_pda) + 32 (funder) + 8 (amount) + 1 (bump)
-    pub const LEN: usize = 73;
+    // 32 (state_pda) + 32 (beneficiary) + 32 (relay) + 8 (amount) + 1 (bump)
+    pub const LEN: usize = 105;
 }

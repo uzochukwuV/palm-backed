@@ -1,6 +1,7 @@
 import { Navbar } from '@/components/landing/navbar'
 import { Hero } from '@/components/landing/hero'
 import { Features } from '@/components/landing/features'
+import { TechStack } from '@/components/landing/tech-stack'
 import { Categories } from '@/components/landing/categories'
 import { FeaturedProjects } from '@/components/landing/featured-projects'
 import { CTA } from '@/components/landing/cta'
@@ -12,6 +13,7 @@ export default function Home() {
       <Navbar />
       <Hero />
       <Features />
+      <TechStack />
       <FeaturedProjects />
       <Categories />
       <CTA />

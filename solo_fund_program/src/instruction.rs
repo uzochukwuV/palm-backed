@@ -9,24 +9,54 @@ pub enum Asset {
 }
 
 pub enum EscrowInstruction {
-    /// Accounts (SOL):   payer, creator, state_pda, vault, system_program
-    /// Accounts (SPL):   payer, creator, state_pda, vault_authority, vault_ata, mint, token_program, ata_program, system_program
-    /// If payer == creator the sponsor feature is a no-op.
+    /// Accounts (SOL): payer, creator, state_pda, vault, system_program
+    /// Accounts (SPL): payer, creator, state_pda, vault_authority, vault_ata,
+    ///                 mint, token_program, ata_program, system_program
+    /// payer and creator must both sign. Pass same key twice if they are equal.
     InitializeProject {
         asset: Asset,
         project_id: u64,
         budget_amount: u64,
         deadline_unix_ts: i64,
     },
-    /// Accounts (SOL): funder, state_pda, vault, receipt_pda, system_program
-    /// Accounts (SPL): funder, state_pda, funder_token, vault_authority, vault_ata, receipt_pda, token_program, system_program
-    Fund { amount: u64 },
+
+    /// Fund a project on behalf of `beneficiary`.
+    ///
+    /// For direct funders: pass own pubkey as beneficiary.
+    /// For relay wallets:  pass the cross-chain user's Solana pubkey as
+    ///                     beneficiary; relay wallet is the tx signer.
+    ///
+    /// Receipt PDA is keyed to beneficiary, not the signer.
+    ///
+    /// Accounts (SOL): funder/relay, state_pda, vault, receipt_pda, system_program
+    /// Accounts (SPL): funder/relay, state_pda, funder_token, vault_authority,
+    ///                 vault_ata, receipt_pda, token_program, system_program
+    Fund {
+        amount: u64,
+        /// Real economic owner. For direct funders this equals the signer.
+        beneficiary: Pubkey,
+    },
+
+    /// Withdraw funds after deadline (creator only, 1% fee to treasury).
+    ///
     /// Accounts (SOL): creator, state_pda, vault, treasury, payer
-    /// Accounts (SPL): creator, state_pda, vault_authority, vault_ata, creator_ata, treasury_ata, token_program, payer
+    /// Accounts (SPL): creator, state_pda, vault_authority, vault_ata,
+    ///                 creator_ata, treasury_ata, token_program, payer
     Withdraw,
-    /// Refund the caller's full contribution. Only valid before the deadline.
-    /// Accounts (SOL): funder, state_pda, vault, receipt_pda, system_program
-    /// Accounts (SPL): funder, state_pda, funder_token, vault_authority, vault_ata, receipt_pda, token_program
+
+    /// Refund the beneficiary's full contribution before the deadline.
+    ///
+    /// Authorization:
+    ///   - receipt.relay == default  → beneficiary must sign
+    ///   - receipt.relay != default  → relay must sign (routes refund cross-chain)
+    ///
+    /// Accounts (SOL): signer, state_pda, vault, receipt_pda, refund_dest, system_program
+    /// Accounts (SPL): signer, state_pda, refund_token, vault_authority,
+    ///                 vault_ata, receipt_pda, token_program
+    ///
+    /// `refund_dest` / `refund_token` is where the tokens land:
+    ///   - Direct: beneficiary's wallet / ATA
+    ///   - Relay:  relay's wallet / ATA (relay handles cross-chain leg)
     Refund,
 }
 
@@ -96,9 +126,12 @@ impl EscrowInstruction {
                     deadline_unix_ts,
                 })
             }
-            1 => Ok(Self::Fund {
-                amount: read_u64(input, &mut offset)?,
-            }),
+            // Fund: [1u8][amount: u64 LE][beneficiary: 32 bytes]
+            1 => {
+                let amount = read_u64(input, &mut offset)?;
+                let beneficiary = read_pubkey(input, &mut offset)?;
+                Ok(Self::Fund { amount, beneficiary })
+            }
             2 => Ok(Self::Withdraw),
             3 => Ok(Self::Refund),
             _ => Err(EscrowError::InvalidInstruction.into()),

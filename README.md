@@ -10,12 +10,6 @@ This repository is linked to a [v0](https://v0.app) project. You can continue de
 
 ## Getting Started
 
-Deployed successfully on devnet.
-
-Contract / Program Address: 4bP1AsitGdrAnXUYuwdrEJsxoFML8Zpg4VQH3dPoMKnr
-Verified on devnet: processor.rs build deployed; program shows as upgradeable with ProgramData FjLf6AMRvxdS8LuqUaqKM8jgYFT1wbAvZegyp1xr7QuW.
-
-
 First, run the development server:
 
 ```bash

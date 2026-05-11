@@ -13,6 +13,7 @@ import {
 import { Compass, Play, User, LogOut, Settings, PlusCircle, LayoutDashboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WalletButton } from '@/components/solana/wallet-button'
+import { SNSDomainButton } from '@/components/solana/sns-domain-button'
 
 interface AppNavbarProps {
   user?: {
@@ -63,6 +64,7 @@ export function AppNavbar({ user }: AppNavbarProps) {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            <SNSDomainButton />
             <WalletButton />
             {user ? (
               <>
