@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useSolanaProgram } from "@/hooks/use-solana-program";
+import { useKiraPay } from "@/hooks/use-kira-pay";
 import { createClient } from "@/lib/supabase/client";
 import { SOLANA_EXPLORER_CLUSTER } from "@/lib/solana/program";
 import { Button } from "@/components/ui/button";
@@ -46,9 +47,20 @@ export function FundProjectDialog({
   const [amount, setAmount] = useState("");
   const [txSignature, setTxSignature] = useState<string | null>(null);
   
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const { setVisible } = useWalletModal();
   const { fundProjectAction, isLoading, error, clearError } = useSolanaProgram();
+  const {
+    initiateCrossChainPayment,
+    isLoading: isKiraLoading,
+    error: kiraError,
+    clearError: clearKiraError
+  } = useKiraPay({
+    projectId,
+    projectTitle,
+    creatorWallet,
+    onChainProjectId
+  });
 
   const remainingToGoal = Math.max(0, fundingGoal - currentFunding);
   const amountNum = parseFloat(amount) || 0;
@@ -94,6 +106,7 @@ export function FundProjectDialog({
     setAmount("");
     setShowPaymentMethod(false);
     clearError();
+    clearKiraError();
   };
 
   const handleOpenDialog = () => {
@@ -101,13 +114,27 @@ export function FundProjectDialog({
     setShowPaymentMethod(true);
   };
 
-  const handlePaymentMethodSelect = (method: PaymentMethod) => {
+  const handlePaymentMethodSelect = async (method: PaymentMethod) => {
     setSelectedPaymentMethod(method);
     setShowPaymentMethod(false);
     
     if (method === 'crosschain') {
-      // TODO: Open Kira Pay payment link in new window when implemented
-      console.log('[v0] Cross-chain payment via Kira Pay selected');
+      // Initiate KiraPay cross-chain payment
+      if (!amount || parseFloat(amount) <= 0) {
+        setShowPaymentMethod(true);
+        return;
+      }
+      
+      const result = await initiateCrossChainPayment(
+        parseFloat(amount),
+        'USDC', // Default to USDC for cross-chain
+        publicKey?.toBase58()
+      );
+      
+      if (result.success) {
+        // Payment window opened, show pending state
+        setTxSignature('pending-kira-payment');
+      }
     } else if (!connected) {
       setVisible(true);
     }
@@ -248,9 +275,9 @@ export function FundProjectDialog({
               </div>
 
               {/* Error message */}
-              {error && (
+              {(error || kiraError) && (
                 <div className="bg-destructive/10 text-destructive text-sm rounded-lg p-3">
-                  {error}
+                  {error || kiraError}
                 </div>
               )}
             </div>
@@ -260,13 +287,13 @@ export function FundProjectDialog({
               </Button>
               <Button
                 onClick={handleFund}
-                disabled={isLoading || !amount || amountNum <= 0}
+                disabled={isLoading || isKiraLoading || !amount || amountNum <= 0}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {isLoading ? (
+                {(isLoading || isKiraLoading) ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
+                    {selectedPaymentMethod === 'crosschain' ? 'Opening KiraPay...' : 'Processing...'}
                   </>
                 ) : (
                   <>

@@ -43,32 +43,48 @@ export async function POST(request: NextRequest) {
 
     // Handle payment completed event
     if (event === 'payment.completed' && status === 'completed') {
-      if (!metadata?.projectId || !metadata?.backerId) {
+      if (!metadata?.projectId || !metadata?.creatorWallet || !metadata?.onChainProjectId) {
         return NextResponse.json(
-          { error: 'Missing required metadata' },
+          { error: 'Missing required metadata (projectId, creatorWallet, onChainProjectId)' },
           { status: 400 }
         );
       }
 
-      const result = await recordKiraPayContribution({
-        projectId: metadata.projectId,
-        backerId: metadata.backerId,
-        amount,
-        currency,
-        kiraPaymentCode: code,
-        transactionHash,
-      });
+      // Convert amount to SOL equivalent (simplified - in production, use proper conversion)
+      const amountSol = parseFloat(amount);
 
-      if (!result.success) {
-        console.error('[v0] Failed to record contribution:', result.error);
+      // Call relay funding endpoint to fund on-chain
+      const relayResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/relay/fund-project`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: metadata.projectId,
+            creatorWallet: metadata.creatorWallet,
+            onChainProjectId: metadata.onChainProjectId,
+            amountSol,
+            beneficiary: metadata.beneficiary || null,
+            kiraPaymentCode: code,
+          }),
+        }
+      );
+
+      const relayResult = await relayResponse.json();
+
+      if (!relayResult.success) {
+        console.error('[v0] Relay funding failed:', relayResult.error);
         return NextResponse.json(
-          { error: 'Failed to record contribution' },
+          { error: 'On-chain funding failed', details: relayResult.error },
           { status: 500 }
         );
       }
 
-      console.log('[v0] Successfully recorded Kira Pay contribution');
-      return NextResponse.json({ success: true });
+      console.log('[v0] KiraPay payment funded on-chain:', relayResult.signature);
+      return NextResponse.json({
+        success: true,
+        signature: relayResult.signature
+      });
     }
 
     // Handle other events

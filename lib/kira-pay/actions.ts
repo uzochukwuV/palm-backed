@@ -13,6 +13,9 @@ export async function createKiraPaymentLink(params: {
   amount: number;
   currency: 'USDC' | 'USDT' | 'PUSD';
   backerEmail?: string;
+  creatorWallet?: string;
+  onChainProjectId?: string;
+  beneficiary?: string;
 }) {
   try {
     const supabase = await createClient();
@@ -36,6 +39,10 @@ export async function createKiraPaymentLink(params: {
         backerEmail: user.email,
         backerWallet: user.user_metadata?.solana_wallet,
         type: 'project-funding',
+        // Required for relay wallet to fund on-chain
+        creatorWallet: params.creatorWallet || '',
+        onChainProjectId: params.onChainProjectId || '',
+        beneficiary: params.beneficiary || user.user_metadata?.solana_wallet || '',
       },
     };
 

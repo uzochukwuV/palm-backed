@@ -1,6 +1,9 @@
+'use client'
+
 import Link from 'next/link'
 import { Progress } from '@/components/ui/progress'
-import { Users, Play } from 'lucide-react'
+import { Users, Play, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 export interface Project {
   id: string
@@ -11,6 +14,7 @@ export interface Project {
   funding_goal: number | null
   current_funding: number
   backer_count: number
+  on_chain_deadline_unix_ts?: number | null
   creator: {
     id: string
     username: string
@@ -28,10 +32,49 @@ interface ProjectCardProps {
   project: Project
 }
 
+function useCountdown(deadlineUnixTs?: number | null) {
+  const [timeLeft, setTimeLeft] = useState<string>('')
+
+  useEffect(() => {
+    if (!deadlineUnixTs) return
+
+    const updateCountdown = () => {
+      const now = Math.floor(Date.now() / 1000)
+      const diff = deadlineUnixTs - now
+
+      if (diff <= 0) {
+        setTimeLeft('Ended')
+        return
+      }
+
+      const days = Math.floor(diff / 86400)
+      const hours = Math.floor((diff % 86400) / 3600)
+      const minutes = Math.floor((diff % 3600) / 60)
+
+      if (days > 0) {
+        setTimeLeft(`${days}d ${hours}h left`)
+      } else if (hours > 0) {
+        setTimeLeft(`${hours}h ${minutes}m left`)
+      } else {
+        setTimeLeft(`${minutes}m left`)
+      }
+    }
+
+    updateCountdown()
+    const interval = setInterval(updateCountdown, 60000) // Update every minute
+
+    return () => clearInterval(interval)
+  }, [deadlineUnixTs])
+
+  return timeLeft
+}
+
 export function ProjectCard({ project }: ProjectCardProps) {
-  const progress = project.funding_goal 
-    ? (project.current_funding / project.funding_goal) * 100 
+  const progress = project.funding_goal
+    ? (project.current_funding / project.funding_goal) * 100
     : 0
+  
+  const countdown = useCountdown(project.on_chain_deadline_unix_ts)
 
   return (
     <Link
@@ -105,10 +148,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </div>
         )}
 
-        {/* Backers */}
-        <div className="flex items-center gap-2 mt-4 text-sm text-muted-foreground">
-          <Users className="h-4 w-4" />
-          <span>{project.backer_count} backers</span>
+        {/* Backers and Countdown */}
+        <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            <span>{project.backer_count} backers</span>
+          </div>
+          {countdown && (
+            <div className="flex items-center gap-1 text-primary">
+              <Clock className="h-4 w-4" />
+              <span className="font-medium">{countdown}</span>
+            </div>
+          )}
         </div>
       </div>
     </Link>

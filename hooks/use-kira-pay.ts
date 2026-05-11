@@ -4,9 +4,11 @@ import { createKiraPaymentLink } from '@/lib/kira-pay/actions';
 interface UseKiraPayOptions {
   projectId: string;
   projectTitle: string;
+  creatorWallet?: string;
+  onChainProjectId?: string;
 }
 
-export function useKiraPay({ projectId, projectTitle }: UseKiraPayOptions) {
+export function useKiraPay({ projectId, projectTitle, creatorWallet, onChainProjectId }: UseKiraPayOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
@@ -14,7 +16,7 @@ export function useKiraPay({ projectId, projectTitle }: UseKiraPayOptions) {
   const initiateCrossChainPayment = async (
     amount: number,
     currency: 'USDC' | 'USDT' | 'PUSD',
-    backerEmail?: string
+    beneficiary?: string
   ) => {
     setIsLoading(true);
     setError(null);
@@ -25,7 +27,9 @@ export function useKiraPay({ projectId, projectTitle }: UseKiraPayOptions) {
         projectTitle,
         amount,
         currency,
-        backerEmail,
+        creatorWallet,
+        onChainProjectId,
+        beneficiary,
       });
 
       if (result.success && result.paymentLink) {

@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { AppNavbar } from '@/components/app/app-navbar'
+import type { User } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Wallet } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ArrowLeft, Loader2, Wallet, Zap } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useSolanaProgram } from '@/hooks/use-solana-program'
@@ -35,7 +37,8 @@ export default function NewProjectPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { publicKey, connected } = useWallet()
+  const [user, setUser] = useState<{ id: string; email?: string; username?: string } | null>(null)
+  const { publicKey, connected, signTransaction } = useWallet()
   const { setVisible } = useWalletModal()
   const { initProject, isLoading: isChainLoading, error: chainError, clearError } = useSolanaProgram()
   
@@ -47,6 +50,31 @@ export default function NewProjectPage() {
     funding_goal: '',
     deadline: '',
   })
+  const [useRelayGas, setUseRelayGas] = useState(false)
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      const supabase = createClient()
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      
+      if (authUser) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', authUser.id)
+          .single()
+        
+        setUser({
+          id: authUser.id,
+          email: authUser.email,
+          username: profile?.username,
+        })
+      }
+    }
+    
+    fetchUser()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,11 +141,86 @@ export default function NewProjectPage() {
     }
 
     const onChainProjectId = uuidToProjectId(data.id)
-    const signature = await initProject(
-      onChainProjectId,
-      parseFloat(formData.funding_goal),
-      deadlineUnixTs
-    )
+    let signature: string | null = null
+
+    if (useRelayGas) {
+      // Phase 1: Ask API to build + relay-sign the tx
+      try {
+        const response = await fetch('/api/relay/init-project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: data.id,
+            creatorWallet: publicKey.toBase58(),
+            budgetSol: parseFloat(formData.funding_goal),
+            deadlineUnixTs,
+          }),
+        })
+
+        const json = await response.json()
+        if (!json.success) {
+          throw new Error(json.error || 'Relay initialization failed')
+        }
+
+        console.log('✅ Received relay-signed transaction from backend')
+
+        // Phase 2: Deserialize, creator signs, broadcast
+        const { Transaction, Connection } = await import('@solana/web3.js')
+        const txBuffer = Buffer.from(json.transaction, 'base64')
+        const transaction = Transaction.from(txBuffer)
+
+        console.log('Transaction after deserialization:', {
+          signatures: transaction.signatures.map(s => ({
+            pubkey: s.publicKey?.toBase58(),
+            signature: s.signature ? 'present' : 'null'
+          })),
+          feePayer: transaction.feePayer?.toBase58()
+        })
+
+        // Creator signs (relay sig is already embedded)
+        if (!signTransaction) {
+          throw new Error('Wallet does not support transaction signing')
+        }
+        
+        const signedTx = await signTransaction(transaction)
+        
+        console.log('Transaction after creator signs:', {
+          signatures: signedTx.signatures.map(s => ({
+            pubkey: s.publicKey?.toBase58(),
+            signature: s.signature ? 'present' : 'null'
+          }))
+        })
+
+        // Broadcast with both signatures
+        const connection = new Connection(
+          process.env.NEXT_PUBLIC_SOLANA_NETWORK === 'mainnet-beta'
+            ? process.env.NEXT_PUBLIC_SOLANA_RPC_MAINNET || 'https://api.mainnet-beta.solana.com'
+            : process.env.NEXT_PUBLIC_SOLANA_RPC_DEVNET || 'https://api.devnet.solana.com',
+          'confirmed'
+        )
+
+        signature = await connection.sendRawTransaction(signedTx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+        })
+
+        console.log('✅ Transaction sent:', signature)
+        await connection.confirmTransaction(signature, 'confirmed')
+        console.log('✅ Transaction confirmed')
+      } catch (err) {
+        console.error('❌ Relay gas error:', err)
+        setError(`Relay gas failed: ${err instanceof Error ? err.message : 'Unknown error'}. Try without relay.`)
+        setIsLoading(false)
+        return
+      }
+    } else {
+      // Direct wallet initialization
+      signature = await initProject(
+        onChainProjectId,
+        parseFloat(formData.funding_goal),
+        deadlineUnixTs
+      )
+    }
 
     if (!signature) {
       setError('Project was saved, but on-chain initialization failed. Open the project settings to retry.')
@@ -149,7 +252,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppNavbar />
+      <AppNavbar user={user} />
       
       <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl">
@@ -264,6 +367,27 @@ export default function NewProjectPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   />
+                </div>
+
+                {/* Relay Gas Option */}
+                <div className="flex items-start space-x-3 rounded-lg border border-border p-4 bg-muted/30">
+                  <Checkbox
+                    id="relay-gas"
+                    checked={useRelayGas}
+                    onCheckedChange={(checked) => setUseRelayGas(checked as boolean)}
+                  />
+                  <div className="flex-1 space-y-1">
+                    <label
+                      htmlFor="relay-gas"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2 cursor-pointer"
+                    >
+                      <Zap className="h-4 w-4 text-primary" />
+                      Use sponsored gas (Relay Wallet)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Let our relay wallet pay for the transaction fees. Your wallet will still sign to prove ownership.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Error Message */}

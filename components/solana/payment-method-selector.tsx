@@ -82,7 +82,7 @@ export function PaymentMethodSelector({
 
           {/* Cross-Chain Payment via Kira Pay */}
           <Card
-            className={`cursor-pointer border-2 transition-all opacity-75 ${
+            className={`cursor-pointer border-2 transition-all ${
               selected === 'crosschain'
                 ? 'border-primary bg-primary/5'
                 : 'border-border hover:border-primary/50'
@@ -90,16 +90,13 @@ export function PaymentMethodSelector({
             onClick={() => setSelected('crosschain')}
           >
             <div className="p-4 flex items-start gap-4">
-              <div className="mt-1 h-5 w-5 rounded border-2 border-primary/50 flex items-center justify-center">
+              <div className="mt-1 h-5 w-5 rounded border-2 border-primary flex items-center justify-center">
                 {selected === 'crosschain' && <Check className="h-4 w-4 text-primary" />}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <Globe className="h-4 w-4 text-blue-500" />
                   <h3 className="font-semibold text-foreground">Cross-Chain (Kira Pay)</h3>
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                    Coming Soon
-                  </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Fund from Ethereum, Polygon, and other chains
@@ -123,7 +120,7 @@ export function PaymentMethodSelector({
         <div className="space-y-3">
           <Button
             onClick={handleContinue}
-            disabled={isLoading || selected === 'crosschain'}
+            disabled={isLoading}
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
             size="lg"
           >
