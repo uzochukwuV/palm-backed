@@ -12,7 +12,7 @@ import {
 // Devnet deployment supplied after the program was deployed.
 export const PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_SOLANA_PROGRAM_ID ||
-    "4bP1AsitGdrAnXUYuwdrEJsxoFML8Zpg4VQH3dPoMKnr"
+    "3bvDjnbgsJdsFHRGzzwZVn5maCmEhkBKr7mF2Y7aFCwi"
 );
 
 export const SOLANA_NETWORK =
@@ -186,10 +186,11 @@ function createInitializeData(
 /**
  * Create Fund instruction data.
  */
-function createFundData(amount: bigint): Uint8Array {
-  const buffer = new Uint8Array(1 + 8);
+function createFundData(amount: bigint, beneficiary: PublicKey): Uint8Array {
+  const buffer = new Uint8Array(1 + 8 + 32);
   buffer[0] = INSTRUCTION_FUND;
   buffer.set(u64Le(amount), 1);
+  beneficiary.toBuffer().copy(buffer, 9);
   return buffer;
 }
 
@@ -261,13 +262,16 @@ export async function fundProject(
   funder: PublicKey,
   creator: PublicKey,
   projectId: bigint,
-  amountSol: number
+  amountSol: number,
+  beneficiary?: PublicKey
 ): Promise<Transaction> {
   const amount = solToLamports(amountSol);
 
   if (amount <= BigInt(0)) {
     throw new Error("Contribution must be greater than 0 SOL");
   }
+
+  const recipient = beneficiary ?? funder;
 
   const [statePda] = deriveStatePda(PROGRAM_ID, creator, projectId);
   const [vaultPda] = deriveVaultAuthority(PROGRAM_ID, statePda);
@@ -281,7 +285,7 @@ export async function fundProject(
       { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
     ],
     programId: PROGRAM_ID,
-    data: Buffer.from(createFundData(amount)),
+    data: Buffer.from(createFundData(amount, recipient)),
   });
 
   return buildTransaction(connection, funder, instruction);

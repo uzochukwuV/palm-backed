@@ -49,10 +49,10 @@ fn derive_vault_authority(program_id: &Pubkey, state_pda: &Pubkey) -> (Pubkey, u
 fn derive_receipt_pda(
     program_id: &Pubkey,
     state_pda: &Pubkey,
-    funder: &Pubkey,
+    beneficiary: &Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[b"receipt", state_pda.as_ref(), funder.as_ref()],
+        &[b"receipt", state_pda.as_ref(), beneficiary.as_ref()],
         program_id,
     )
 }
@@ -78,7 +78,7 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
             budget_amount,
             deadline_unix_ts,
         } => process_initialize(program_id, accounts, asset, project_id, budget_amount, deadline_unix_ts),
-        EscrowInstruction::Fund { amount } => process_fund(program_id, accounts, amount),
+        EscrowInstruction::Fund { amount, beneficiary } => process_fund(program_id, accounts, amount, beneficiary),
         EscrowInstruction::Withdraw => process_withdraw(program_id, accounts),
         EscrowInstruction::Refund => process_refund(program_id, accounts),
     }
@@ -322,7 +322,12 @@ fn process_initialize(
 // ---------------------------------------------------------------------------
 // Fund
 // ---------------------------------------------------------------------------
-fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> ProgramResult {
+fn process_fund(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    amount: u64,
+    beneficiary: Pubkey,
+) -> ProgramResult {
     if amount == 0 {
         return Err(EscrowError::InvalidInstruction.into());
     }
@@ -383,7 +388,7 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
             }
 
             let (expected_receipt, receipt_bump) =
-                derive_receipt_pda(program_id, state_info.key, funder.key);
+                derive_receipt_pda(program_id, state_info.key, &beneficiary);
             if expected_receipt != *receipt_info.key {
                 return Err(EscrowError::InvalidPda.into());
             }
@@ -393,6 +398,11 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
                 &[funder.clone(), vault_info.clone(), system_program.clone()],
             )?;
 
+            let relay = if beneficiary == *funder.key {
+                Pubkey::default().to_bytes()
+            } else {
+                funder.key.to_bytes()
+            };
             upsert_receipt(
                 program_id,
                 funder,
@@ -401,6 +411,8 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
                 system_program,
                 receipt_bump,
                 amount,
+                &beneficiary,
+                relay,
             )?;
         }
         1 => {
@@ -441,7 +453,7 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
             }
 
             let (expected_receipt, receipt_bump) =
-                derive_receipt_pda(program_id, state_info.key, funder.key);
+                derive_receipt_pda(program_id, state_info.key, &beneficiary);
             if expected_receipt != *receipt_info.key {
                 return Err(EscrowError::InvalidPda.into());
             }
@@ -464,6 +476,11 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
                 ],
             )?;
 
+            let relay = if beneficiary == *funder.key {
+                Pubkey::default().to_bytes()
+            } else {
+                funder.key.to_bytes()
+            };
             upsert_receipt(
                 program_id,
                 funder,
@@ -472,6 +489,8 @@ fn process_fund(program_id: &Pubkey, accounts: &[AccountInfo], amount: u64) -> P
                 system_program,
                 receipt_bump,
                 amount,
+                &beneficiary,
+                relay,
             )?;
         }
         _ => return Err(EscrowError::InvalidInstruction.into()),
@@ -491,6 +510,8 @@ fn upsert_receipt<'a>(
     system_program: &AccountInfo<'a>,
     receipt_bump: u8,
     amount: u64,
+    beneficiary: &Pubkey,
+    relay: [u8; 32],
 ) -> ProgramResult {
     if receipt_info.data_is_empty() {
         let rent = Rent::get()?;
@@ -507,13 +528,14 @@ fn upsert_receipt<'a>(
             &[&[
                 b"receipt",
                 state_info.key.as_ref(),
-                funder.key.as_ref(),
+                beneficiary.as_ref(),
                 &[receipt_bump],
             ]],
         )?;
         let receipt = ReceiptState {
             state_pda: state_info.key.to_bytes(),
-            funder: funder.key.to_bytes(),
+            beneficiary: beneficiary.to_bytes(),
+            relay,
             amount,
             bump: receipt_bump,
         };
@@ -840,16 +862,31 @@ fn process_refund(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
                 return Err(EscrowError::InvalidPda.into());
             }
 
-            let (expected_receipt, _) =
-                derive_receipt_pda(program_id, state_info.key, funder.key);
-            if expected_receipt != *receipt_info.key {
-                return Err(EscrowError::InvalidPda.into());
-            }
             if receipt_info.data_is_empty() {
                 return Err(EscrowError::NoReceiptFound.into());
             }
 
             let receipt = ReceiptState::try_from_slice(&receipt_info.data.borrow())?;
+            let beneficiary = Pubkey::new_from_array(receipt.beneficiary);
+            let relay = Pubkey::new_from_array(receipt.relay);
+            let (expected_receipt, _) =
+                derive_receipt_pda(program_id, state_info.key, &beneficiary);
+            if expected_receipt != *receipt_info.key {
+                return Err(EscrowError::InvalidPda.into());
+            }
+            if receipt.state_pda != state_info.key.to_bytes() {
+                return Err(EscrowError::InvalidPda.into());
+            }
+
+            let authorized_signer = if relay == Pubkey::default() {
+                beneficiary
+            } else {
+                relay
+            };
+            if *funder.key != authorized_signer {
+                return Err(EscrowError::UnauthorizedRefund.into());
+            }
+
             let refund_amount = receipt.amount;
 
             // Deduct from vault directly (vault is program-owned, no CPI needed).
@@ -912,16 +949,31 @@ fn process_refund(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
                 return Err(EscrowError::InvalidPda.into());
             }
 
-            let (expected_receipt, _) =
-                derive_receipt_pda(program_id, state_info.key, funder.key);
-            if expected_receipt != *receipt_info.key {
-                return Err(EscrowError::InvalidPda.into());
-            }
             if receipt_info.data_is_empty() {
                 return Err(EscrowError::NoReceiptFound.into());
             }
 
             let receipt = ReceiptState::try_from_slice(&receipt_info.data.borrow())?;
+            let beneficiary = Pubkey::new_from_array(receipt.beneficiary);
+            let relay = Pubkey::new_from_array(receipt.relay);
+            let (expected_receipt, _) =
+                derive_receipt_pda(program_id, state_info.key, &beneficiary);
+            if expected_receipt != *receipt_info.key {
+                return Err(EscrowError::InvalidPda.into());
+            }
+            if receipt.state_pda != state_info.key.to_bytes() {
+                return Err(EscrowError::InvalidPda.into());
+            }
+
+            let authorized_signer = if relay == Pubkey::default() {
+                beneficiary
+            } else {
+                relay
+            };
+            if *funder.key != authorized_signer {
+                return Err(EscrowError::UnauthorizedRefund.into());
+            }
+
             let refund_amount = receipt.amount;
 
             let ix = spl_token::instruction::transfer(

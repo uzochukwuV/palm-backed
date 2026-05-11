@@ -21,7 +21,7 @@ impl ProjectState {
     pub const LEN: usize = 131;
 }
 
-/// Per-funder receipt PDA: ["receipt", state_pda, beneficiary]
+/// Per-contribution receipt PDA: ["receipt", state_pda, beneficiary]
 ///
 /// `beneficiary` is the real economic owner of the contribution:
 ///   - Direct funder:  beneficiary == signer (tx sender)

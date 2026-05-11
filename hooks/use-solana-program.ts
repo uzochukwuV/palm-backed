@@ -124,20 +124,20 @@ export function useSolanaProgram(): UseSolanaProgramReturn {
 
       try {
         const creator = new PublicKey(creatorPubkey);
-        
+
         const transaction = await fundProject(
           connection,
           publicKey,
           creator,
           projectId,
-          amountSol
+          amountSol,
+          publicKey
         );
 
         const signature = await sendTransaction(transaction, connection);
-        
-        // Wait for confirmation
+
         await connection.confirmTransaction(signature, "confirmed");
-        
+
         return signature;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fund project";
