@@ -110,33 +110,51 @@ export function FundProjectDialog({
   };
 
   const handleOpenDialog = () => {
-    setOpen(true);
-    setShowPaymentMethod(true);
+    setOpen(false); // Close main dialog
+    setShowPaymentMethod(true); // Show payment method selector first
   };
 
-  const handlePaymentMethodSelect = async (method: PaymentMethod) => {
+  const handleContinueToAmount = () => {
+    setShowPaymentMethod(false);
+    setOpen(true); // Open amount dialog
+  };
+
+  const handlePaymentMethodSelect = (method: PaymentMethod) => {
     setSelectedPaymentMethod(method);
     setShowPaymentMethod(false);
+    setOpen(true); // Open amount dialog after selecting payment method
+  };
+
+  const handleFundWithSelectedMethod = async () => {
+    if (!amount || parseFloat(amount) <= 0) return;
     
-    if (method === 'crosschain') {
-      // Initiate KiraPay cross-chain payment
-      if (!amount || parseFloat(amount) <= 0) {
-        setShowPaymentMethod(true);
-        return;
-      }
+    if (selectedPaymentMethod === 'crosschain') {
+      // KiraPay cross-chain payment
+      console.log('🔵 Initiating KiraPay payment:', {
+        amount: parseFloat(amount),
+        currency: 'USDC',
+        beneficiary: publicKey?.toBase58(),
+        projectId,
+        onChainProjectId
+      });
       
       const result = await initiateCrossChainPayment(
         parseFloat(amount),
-        'USDC', // Default to USDC for cross-chain
+        'USDC',
         publicKey?.toBase58()
       );
       
+      console.log('📥 KiraPay payment result:', result);
+      
       if (result.success) {
-        // Payment window opened, show pending state
         setTxSignature('pending-kira-payment');
+        console.log('✅ KiraPay payment window opened');
+      } else {
+        console.error('❌ KiraPay payment failed:', result.error);
       }
-    } else if (!connected) {
-      setVisible(true);
+    } else {
+      // Direct Solana wallet payment
+      await handleFund();
     }
   };
 
@@ -286,7 +304,7 @@ export function FundProjectDialog({
                 Cancel
               </Button>
               <Button
-                onClick={handleFund}
+                onClick={handleFundWithSelectedMethod}
                 disabled={isLoading || isKiraLoading || !amount || amountNum <= 0}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
@@ -298,7 +316,7 @@ export function FundProjectDialog({
                 ) : (
                   <>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Back with {amountNum > 0 ? `${amountNum} SOL` : "SOL"}
+                    {selectedPaymentMethod === 'crosschain' ? 'Pay with Kira Pay' : `Back with ${amountNum > 0 ? `${amountNum} SOL` : "SOL"}`}
                   </>
                 )}
               </Button>
@@ -312,7 +330,7 @@ export function FundProjectDialog({
         open={showPaymentMethod}
         onOpenChange={setShowPaymentMethod}
         onSelect={handlePaymentMethodSelect}
-        isLoading={isLoading}
+        isLoading={isLoading || isKiraLoading}
       />
     </>
   );

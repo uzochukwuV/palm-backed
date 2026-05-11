@@ -103,6 +103,20 @@ export function deriveVaultAuthority(
 }
 
 /**
+ * Derive the receipt PDA for a funder/beneficiary.
+ */
+export function deriveReceiptPda(
+  programId: PublicKey,
+  statePda: PublicKey,
+  beneficiary: PublicKey
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("receipt"), statePda.toBuffer(), beneficiary.toBuffer()],
+    programId
+  );
+}
+
+/**
  * Parse ProjectState from account data.
  */
 export function parseProjectState(data: Uint8Array): ProjectState {
@@ -169,7 +183,7 @@ function createInitializeData(
   buffer[offset] = ASSET_SOL;
   offset += 1;
 
-  PublicKey.default.toBuffer().copy(buffer, offset);
+  buffer.set(PublicKey.default.toBytes(), offset);
   offset += 32;
 
   buffer.set(u64Le(projectId), offset);
@@ -190,7 +204,7 @@ function createFundData(amount: bigint, beneficiary: PublicKey): Uint8Array {
   const buffer = new Uint8Array(1 + 8 + 32);
   buffer[0] = INSTRUCTION_FUND;
   buffer.set(u64Le(amount), 1);
-  beneficiary.toBuffer().copy(buffer, 9);
+  buffer.set(beneficiary.toBytes(), 9);
   return buffer;
 }
 
@@ -206,11 +220,13 @@ async function buildTransaction(
   feePayer: PublicKey,
   instruction: TransactionInstruction
 ): Promise<Transaction> {
-  const transaction = new Transaction().add(instruction);
-  transaction.feePayer = feePayer;
-
-  const { blockhash } = await connection.getLatestBlockhash();
-  transaction.recentBlockhash = blockhash;
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+  
+  const transaction = new Transaction({
+    feePayer,
+    blockhash,
+    lastValidBlockHeight,
+  }).add(instruction);
 
   return transaction;
 }
@@ -275,14 +291,15 @@ export async function fundProject(
 
   const [statePda] = deriveStatePda(PROGRAM_ID, creator, projectId);
   const [vaultPda] = deriveVaultAuthority(PROGRAM_ID, statePda);
+  const [receiptPda] = deriveReceiptPda(PROGRAM_ID, statePda, recipient);
 
   const instruction = new TransactionInstruction({
     keys: [
       { pubkey: funder, isSigner: true, isWritable: true },
       { pubkey: statePda, isSigner: false, isWritable: true },
       { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: receiptPda, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
     ],
     programId: PROGRAM_ID,
     data: Buffer.from(createFundData(amount, recipient)),

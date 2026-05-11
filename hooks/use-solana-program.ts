@@ -123,6 +123,13 @@ export function useSolanaProgram(): UseSolanaProgramReturn {
       setError(null);
 
       try {
+        console.log('🔵 Starting fund project:', {
+          creatorPubkey,
+          projectId: projectId.toString(),
+          amountSol,
+          funder: publicKey.toBase58()
+        });
+
         const creator = new PublicKey(creatorPubkey);
 
         const transaction = await fundProject(
@@ -134,12 +141,54 @@ export function useSolanaProgram(): UseSolanaProgramReturn {
           publicKey
         );
 
-        const signature = await sendTransaction(transaction, connection);
+        console.log('✅ Transaction built, refreshing blockhash...');
+        
+        // Refresh blockhash RIGHT before sending to avoid stale blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+        transaction.recentBlockhash = blockhash;
+        transaction.lastValidBlockHeight = lastValidBlockHeight;
+        transaction.feePayer = publicKey;
 
+        console.log('Transaction details:', {
+          feePayer: transaction.feePayer?.toBase58(),
+          recentBlockhash: transaction.recentBlockhash,
+          lastValidBlockHeight: transaction.lastValidBlockHeight,
+          signatures: transaction.signatures.length,
+          instructions: transaction.instructions.length
+        });
+        
+        let signature;
+        try {
+          signature = await sendTransaction(transaction, connection, {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed',
+          });
+        } catch (sendErr) {
+          console.error('❌ Send transaction error:', sendErr);
+          
+          // Unwrap WalletSendTransactionError to get actual cause
+          const cause = (sendErr as any)?.cause ?? (sendErr as any)?.error ?? sendErr;
+          console.error('❌ Error cause:', cause);
+          
+          if (cause && typeof cause.getLogs === 'function') {
+            try {
+              const logs = await cause.getLogs(connection);
+              console.error('❌ Simulation logs:', logs);
+            } catch (logErr) {
+              console.error('❌ Could not get logs:', logErr);
+            }
+          }
+          
+          throw sendErr;
+        }
+
+        console.log('✅ Transaction sent:', signature);
         await connection.confirmTransaction(signature, "confirmed");
 
+        console.log('✅ Transaction confirmed');
         return signature;
       } catch (err) {
+        console.error('❌ Fund project error:', err);
         const message = err instanceof Error ? err.message : "Failed to fund project";
         setError(message);
         return null;

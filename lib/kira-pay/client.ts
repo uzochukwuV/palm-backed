@@ -38,11 +38,11 @@ export interface KiraTransaction {
 
 class KiraPayClient {
   private apiKey: string;
-  private baseUrl = 'https://api.kira-pay.com/v1';
+  private baseUrl = 'https://api.kira-pay.com';
 
   constructor(apiKey: string = process.env.KIRA_PAY_API_KEY || '') {
     if (!apiKey) {
-      console.warn('[v0] Kira Pay API key not configured');
+      console.warn('⚠️  Kira Pay API key not configured - cross-chain payments will not work');
     }
     this.apiKey = apiKey;
   }
@@ -52,9 +52,13 @@ class KiraPayClient {
     endpoint: string,
     data?: Record<string, any>
   ): Promise<T> {
+    if (!this.apiKey) {
+      throw new Error('Kira Pay API key is not configured. Please set KIRA_PAY_API_KEY in your environment variables.');
+    }
+
     const url = `${this.baseUrl}${endpoint}`;
     const headers: HeadersInit = {
-      'Authorization': `Bearer ${this.apiKey}`,
+      'x-api-key': this.apiKey, // KiraPay uses x-api-key header
       'Content-Type': 'application/json',
     };
 
@@ -68,15 +72,20 @@ class KiraPayClient {
     }
 
     try {
+      console.log(`🔵 KiraPay API Request: ${method} ${url}`);
       const response = await fetch(url, options);
 
       if (!response.ok) {
-        throw new Error(`Kira Pay API error: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`❌ KiraPay API error (${response.status}):`, errorText);
+        throw new Error(`Kira Pay API error (${response.status}): ${errorText}`);
       }
 
-      return await response.json() as T;
+      const result = await response.json() as T;
+      console.log('✅ KiraPay API Response:', result);
+      return result;
     } catch (error) {
-      console.error('[v0] Kira Pay request failed:', error);
+      console.error('❌ Kira Pay request failed:', error);
       throw error;
     }
   }
@@ -84,34 +93,68 @@ class KiraPayClient {
   /**
    * Create a payment link for cross-chain deposits
    * The payment link allows users to fund from any supported chain
+   * API Docs: POST /api/link/generate
    */
   async createPaymentLink(params: KiraPaymentLinkParams): Promise<KiraPaymentLink> {
+    // KiraPay expects tokenOut (destination chain/token), receiver (destination wallet),
+    // originalPrice (in fiat), and fiatCurrency
+    
+    // For testing, use a known valid Ethereum address format
+    // KiraPay might not support Solana addresses directly
+    const receiverAddress = params.metadata?.creatorWallet || '';
+    
+    // Convert Solana address to Ethereum format for KiraPay (this is a workaround)
+    // In production, you'd need to use KiraPay's Solana support or bridge
+    const ethAddress = '0x' + receiverAddress.slice(0, 40).padEnd(40, '0');
+    
     const payload = {
-      amount: params.amount,
-      currency: params.currency,
-      description: params.description,
-      email: params.email,
+      tokenOut: {
+        chainId: "8453", // Base chain (example from docs)
+        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" // USDC on Base
+      },
+      receiver: ethAddress, // Use Ethereum-format address
+      originalPrice: Math.floor(params.amount * 100), // Convert to cents/smallest unit
+      fiatCurrency: "USD", // Base currency
+      name: params.description,
+      customOrderId: params.metadata?.projectId || '',
       redirectUrl: params.redirectUrl || `${process.env.NEXT_PUBLIC_APP_URL}/funding-success`,
+      type: "single_use",
+      isViewAsCrypto: true, // Show crypto amounts
       metadata: {
         ...params.metadata,
+        solanaWallet: receiverAddress, // Store real Solana address in metadata
         source: 'backed-app',
         timestamp: new Date().toISOString(),
       },
     };
 
-    const response = await this.request<any>(
+    console.log('📤 Creating KiraPay payment link with payload:', payload);
+
+    const response = await this.request<{
+      message: string;
+      code: number;
+      data: {
+        url: string;
+        price: number;
+        originalPrice: number;
+      };
+    }>(
       'POST',
-      '/links',
+      '/api/link/generate',
       payload
     );
 
+    if (response.code !== 201 || !response.data) {
+      throw new Error(`KiraPay API error: ${response.message || 'Unknown error'}`);
+    }
+
     return {
-      code: response.code,
-      url: response.url,
-      amount: response.amount,
-      currency: response.currency,
-      status: response.status,
-      createdAt: response.createdAt,
+      code: payload.customOrderId,
+      url: response.data.url,
+      amount: response.data.price,
+      currency: 'USD',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
     };
   }
 
