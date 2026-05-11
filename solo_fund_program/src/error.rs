@@ -13,6 +13,10 @@ pub enum EscrowError {
     InvalidMint = 9,
     InvalidTokenAccount = 10,
     MathOverflow = 11,
+    TreasuryAtaNotInitialized = 12,
+    AccountNotWritable = 13,
+    RefundNotAllowed = 14,
+    NoReceiptFound = 15,
 }
 
 impl From<EscrowError> for ProgramError {
@@ -20,4 +24,3 @@ impl From<EscrowError> for ProgramError {
         ProgramError::Custom(value as u32)
     }
 }
-
